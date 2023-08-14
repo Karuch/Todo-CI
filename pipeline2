@@ -1,0 +1,74 @@
+pipeline {
+    agent any
+    stages {
+        stage('build') {
+			steps {
+			
+				sh 'docker build -t tal/flask ./'
+				sh 'docker build -t tal/test ./mongo-image/'
+				sh 'docker build -t tal/mongodb ./test-image/'
+				sh 'docker-compose up'
+				sh 'sleep 5; docker-compose down'
+				sh 'docker tag talk:app 644435390668.dkr.ecr.eu-west-3.amazonaws.com/talk:app-{VERSION}' ##################
+				sh 'aws ecr get-login-password --region eu-wes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   t-3 | docker login --username AWS --password-stdin 644435390668.dkr.ecr.eu-west-3.amazonaws.com'
+				sh 'docker push 644435390668.dkr.ecr.eu-west-3.amazonaws.com/talk:app-{VERSION}' ########################
+			
+			
+				withAWS(region: 'eu-west-1', credentials: 'talk-cards'){ ########
+					sh 'docker build -t talk:app ./'
+					sh 'docker tag talk:app 644435390668.dkr.ecr.eu-west-3.amazonaws.com/talk:app-{VERSION}' ##################
+					sh 'docker push 644435390668.dkr.ecr.eu-west-3.amazonaws.com/talk:app-{VERSION}' ########################
+				
+				}
+                              .
+				script {
+					if(env.BRANCH_NAME == 'main') { 
+						env.PORT = '3463'
+					} else if(env.BRANCH_NAME == 'feature/text') { 
+						env.PORT = ''
+					} else if(env.BRANCH_NAME == 'staging') { 
+						env.PORT = '3000'
+					} else { 
+						env.PORT = ''
+					}
+
+				}
+
+				withAWS(region: 'eu-west-1', credentials: 'talk-cards'){
+					sh 'aws ecr get-login-password --region eu-west-1 | docker login --username AWS --password-stdin 644435390668.dkr.ecr.eu-west-1.amazonaws.com'
+					sh 'docker build -t cowsay:talk ./'
+					sh 'docker tag cowsay:talk 644435390668.dkr.ecr.eu-west-1.amazonaws.com/cowsay:talk'
+					sh 'docker push 644435390668.dkr.ecr.eu-west-1.amazonaws.com/cowsay:talk'
+				}
+			}
+		}
+        stage('remote-deployment') {
+            steps {
+				echo 'remote-deplotment...'
+				withCredentials([file(credentialsId: 'talk-ssh-file-good', variable: 'FILE')]) {
+					sh 'scp -o StrictHostKeyChecking=no -i ${FILE} deployment.sh ubuntu@3.250.217.80:./'
+					sh 'ssh -o StrictHostKeyChecking=no -i ${FILE} ubuntu@3.250.217.80 export PORT=${PORT}'
+					sh 'ssh -o StrictHostKeyChecking=no -i ${FILE} ubuntu@3.250.217.80 ./deployment.sh'
+				}
+			}
+        }
+        stage('testing') {
+            steps {
+				echo 'testing...'
+				sh 'curl 3.250.217.80:${PORT}'
+				withCredentials([file(credentialsId: 'talk-ssh-file-good', variable: 'FILE')]) {
+					sh 'ssh -o StrictHostKeyChecking=no -i ${FILE} ubuntu@3.250.217.80 docker rm -f container'
+				}
+           }
+        }
+    }
+
+    post {
+        always {
+			withCredentials([file(credentialsId: 'talk-ssh-file-good', variable: 'FILE')]) {
+				echo 'post stage...'
+				sh 'ssh -o StrictHostKeyChecking=no -i ${FILE} ubuntu@3.250.217.80 docker rm -f container || true'
+			}
+        }
+    }
+}

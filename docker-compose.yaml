@@ -1,0 +1,19 @@
+version: '3'
+
+services:
+  flask:
+    container_name: tal-flask-${RANDOM_CONTAINER_NAME} 
+    image: tal/flask
+    depends_on:
+      - mongo
+  mongo:
+    container_name: tal-mongo-${RANDOM_CONTAINER_NAME}
+    image: tal/mongodb
+  test:
+    container_name: tal-test-${RANDOM_CONTAINER_NAME}
+    image: tal/test
+    environment:
+      RANDOM_CONTAINER_NAME: ${RANDOM_CONTAINER_NAME}
+    depends_on:
+      - flask
+
